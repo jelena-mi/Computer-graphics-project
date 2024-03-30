@@ -60,8 +60,8 @@ struct ProgramState {
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
-    glm::vec3 backpackPosition = glm::vec3(0.0f);
-    float backpackScale = 1.0f;
+    glm::vec3 modelPosition = glm::vec3(0.0f);
+    float modelScale = 1.0f;
     PointLight pointLight;
     ProgramState()
             : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
@@ -166,7 +166,7 @@ int main() {
 
     // build and compile shaders
     // -------------------------
-    Shader ourShader("resources/shaders/2.model_lighting.vs", "resources/shaders/2.model_lighting.fs");
+    Shader ourShader("resources/shaders/model_lighting.vs", "resources/shaders/model_lighting.fs");
 
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
@@ -241,11 +241,22 @@ int main() {
     skyboxShader.use();
     skyboxShader.setInt("skybox", 0);
 
+
     //TODO
     // load models
     // -----------
     Model ourModel("resources/objects/backpack/backpack.obj");
+    Model abModel("resources/objects/air_balloon/Air_Balloon.obj");
+    Model fModel("resources/objects/falcon/peregrine_falcon.obj");
+    Model ybModel("resources/objects/yellow_bird/yellow_bird.obj");
+    Model cModel("resources/objects/cloud/cloud.obj");
+
     ourModel.SetShaderTextureNamePrefix("material.");
+    abModel.SetShaderTextureNamePrefix("material.");
+    fModel.SetShaderTextureNamePrefix("material.");
+    ybModel.SetShaderTextureNamePrefix("material.");
+    cModel.SetShaderTextureNamePrefix("material.");
+
 
     PointLight& pointLight = programState->pointLight;
     pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
@@ -282,7 +293,7 @@ int main() {
 //        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        //TODO
+
         // don't forget to enable shader before setting uniforms
         ourShader.use();
         pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
@@ -304,13 +315,51 @@ int main() {
         ourShader.setMat4("projection", projection);
         ourShader.setMat4("view", view);
 
+
         // render the loaded model
+
+        //backpack
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model,
-                               programState->backpackPosition); // translate it down so it's at the center of the scene
-        model = glm::scale(model, glm::vec3(programState->backpackScale));    // it's a bit too big for our scene, so scale it down
+                               programState->modelPosition); // translate it down so it's at the center of the scene
+        model = glm::scale(model, glm::vec3(programState->modelScale));    // it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
         ourModel.Draw(ourShader);
+
+        // air balloon
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, -2.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(1.0f));
+        model = glm::translate(model,glm::vec3(sin(0.1f*currentFrame)*20.0f, 3.0f, cos(0.1f*currentFrame)*20.0f));
+        ourShader.setMat4("model", model);
+        abModel.Draw(ourShader);
+
+        // falcon
+        model = glm::mat4(0.8f);
+        model = glm::translate(model, glm::vec3(-10.0f, 0.0f, -10.0f));
+        model = glm::scale(model, glm::vec3(0.3f));
+        model = glm::translate(model,glm::vec3(cos(0.1*currentFrame)*200.0f, 0.0f, sin(0.1*currentFrame)*200.0f));
+        model = glm::rotate(model, glm::radians(0.1f*currentFrame), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        ourShader.setMat4("model", model);
+        fModel.Draw(ourShader);
+
+        // yellow bird
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, -1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.5f));
+        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
+        model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        ourShader.setMat4("model", model);
+        ybModel.Draw(ourShader);
+
+        // cloud
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(-10.0f, -5.0f, -12.0f));
+        model = glm::scale(model, glm::vec3(0.7f));
+        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
+        ourShader.setMat4("model", model);
+        cModel.Draw(ourShader);
 
 
         // draw skybox
@@ -423,9 +472,9 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Begin("Hello window");
         ImGui::Text("Hello text");
         ImGui::SliderFloat("Float slider", &f, 0.0, 1.0);
-        ImGui::ColorEdit3("Background color", (float *) &programState->clearColor);
-        ImGui::DragFloat3("Backpack position", (float*)&programState->backpackPosition);
-        ImGui::DragFloat("Backpack scale", &programState->backpackScale, 0.05, 0.1, 4.0);
+        ImGui::ColorEdit3("Model color", (float *) &programState->clearColor);
+        ImGui::DragFloat3("Model position", (float*)&programState->modelPosition);
+        ImGui::DragFloat("Model scale", &programState->modelScale, 0.05, 0.1, 4.0);
 
         ImGui::DragFloat("pointLight.constant", &programState->pointLight.constant, 0.05, 0.0, 1.0);
         ImGui::DragFloat("pointLight.linear", &programState->pointLight.linear, 0.05, 0.0, 1.0);
