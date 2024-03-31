@@ -246,27 +246,29 @@ int main() {
     // load models
     // -----------
     Model ourModel("resources/objects/backpack/backpack.obj");
-    Model abModel("resources/objects/air_balloon/Air_Balloon.obj");
+    Model abModel("resources/objects/air_balloon/11809_Hot_air_balloon_l2.obj");
     Model fModel("resources/objects/falcon/peregrine_falcon.obj");
-    Model ybModel("resources/objects/yellow_bird/yellow_bird.obj");
+    Model bModel("resources/objects/bird/bird.obj");
     Model cModel("resources/objects/cloud/cloud.obj");
+    Model iModel("resources/objects/insect/insect.obj");
 
     ourModel.SetShaderTextureNamePrefix("material.");
     abModel.SetShaderTextureNamePrefix("material.");
     fModel.SetShaderTextureNamePrefix("material.");
-    ybModel.SetShaderTextureNamePrefix("material.");
+    bModel.SetShaderTextureNamePrefix("material.");
     cModel.SetShaderTextureNamePrefix("material.");
+    iModel.SetShaderTextureNamePrefix("material.");
 
 
     PointLight& pointLight = programState->pointLight;
     pointLight.position = glm::vec3(4.0f, 4.0, 0.0);
-    pointLight.ambient = glm::vec3(0.1, 0.1, 0.1);
-    pointLight.diffuse = glm::vec3(0.6, 0.6, 0.6);
+    pointLight.ambient = glm::vec3(0.9, 0.9, 0.9);
+    pointLight.diffuse = glm::vec3(0.9, 0.9, 0.9);
     pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
 
     pointLight.constant = 1.0f;
-    pointLight.linear = 0.09f;
-    pointLight.quadratic = 0.032f;
+    pointLight.linear = 0.005f;
+    pointLight.quadratic = 0.002f;
 
 
 
@@ -307,6 +309,11 @@ int main() {
         ourShader.setVec3("viewPosition", programState->camera.Position);
         ourShader.setFloat("material.shininess", 32.0f);
 
+        ourShader.setVec3("dirLight.direction", glm::vec3(0.0f, 20.0f, 0.0f));
+        ourShader.setVec3("dirLight.ambient", glm::vec3(0.05f));
+        ourShader.setVec3("dirLight.diffuse", glm::vec3(0.05f));
+        ourShader.setVec3("dirLight.specular", glm::vec3(0.05f));
+
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
@@ -319,47 +326,80 @@ int main() {
         // render the loaded model
 
         //backpack
+        ourShader.use();
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model,
                                programState->modelPosition); // translate it down so it's at the center of the scene
         model = glm::scale(model, glm::vec3(programState->modelScale));    // it's a bit too big for our scene, so scale it down
         ourShader.setMat4("model", model);
-        ourModel.Draw(ourShader);
+//        ourModel.Draw(ourShader);
 
         // air balloon
+        ourShader.use();
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, -2.0f, 0.0f));
-        model = glm::scale(model, glm::vec3(1.0f));
-        model = glm::translate(model,glm::vec3(sin(0.1f*currentFrame)*20.0f, 3.0f, cos(0.1f*currentFrame)*20.0f));
+        model = glm::translate(model, glm::vec3(0.0f, -4.0f, -25.0f));
+        model = glm::scale(model, glm::vec3(0.01f));
+        model = glm::translate(model,glm::vec3(sin(0.1f*currentFrame)*3200.0f, 0.0f, cos(0.1f*currentFrame)*3200.0f));
+        model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
         ourShader.setMat4("model", model);
         abModel.Draw(ourShader);
 
         // falcon
+        ourShader.use();
         model = glm::mat4(0.8f);
-        model = glm::translate(model, glm::vec3(-10.0f, 0.0f, -10.0f));
-        model = glm::scale(model, glm::vec3(0.3f));
+        model = glm::translate(model, glm::vec3(0.0f, 1.0f, -20.0f));
+        model = glm::scale(model, glm::vec3(0.2f));
         model = glm::translate(model,glm::vec3(cos(0.1*currentFrame)*200.0f, 0.0f, sin(0.1*currentFrame)*200.0f));
         model = glm::rotate(model, glm::radians(0.1f*currentFrame), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ourShader.setMat4("model", model);
         fModel.Draw(ourShader);
 
-        // yellow bird
+        // bird
+        ourShader.use();
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, -1.0f, 0.0f));
+        model = glm::translate(model, glm::vec3(0.0f, -7.5f, -15.0f));
         model = glm::scale(model, glm::vec3(0.5f));
-        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
+        model = glm::translate(model,glm::vec3(0.0f, sin(2.5f*currentFrame)*0.5f, 0.0f));
         model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ourShader.setMat4("model", model);
-        ybModel.Draw(ourShader);
+        bModel.Draw(ourShader);
 
-        // cloud
+        // cloud 1
+        ourShader.use();
         model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(-10.0f, -5.0f, -12.0f));
+        model = glm::translate(model, glm::vec3(-20.0f, -6.5f, -40.0f));
+        model = glm::scale(model, glm::vec3(1.0f));
+        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
+        ourShader.setMat4("model", model);
+        cModel.Draw(ourShader);
+
+        // cloud 2
+        ourShader.use();
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(10.0f, 3.0f, -30.0f));
         model = glm::scale(model, glm::vec3(0.7f));
         model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
         ourShader.setMat4("model", model);
         cModel.Draw(ourShader);
+
+        //insect 1
+        ourShader.use();
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, -5.0f, -50.0f));
+        model = glm::scale(model, glm::vec3(0.02f));
+        model = glm::translate(model,glm::vec3(sin(0.4f*currentFrame)*1100.0f, 0.0f, cos(currentFrame)*1000.0f));
+        ourShader.setMat4("model", model);
+        iModel.Draw(ourShader);
+
+        // insect 2
+        ourShader.use();
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, -3.0f, -30.0f));
+        model = glm::scale(model, glm::vec3(0.02f));
+        model = glm::translate(model,glm::vec3(sin(0.4f*currentFrame)*1400.0f, 0.0f, cos(currentFrame)*1200.0f));
+        ourShader.setMat4("model", model);
+        iModel.Draw(ourShader);
 
 
         // draw skybox
