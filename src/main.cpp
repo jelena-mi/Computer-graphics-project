@@ -164,10 +164,16 @@ int main() {
     // -----------------------------
     glEnable(GL_DEPTH_TEST);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
     // build and compile shaders
     // -------------------------
     Shader ourShader("resources/shaders/model_lighting.vs", "resources/shaders/model_lighting.fs");
-
+    Shader blendingShader("resources/shaders/blending.vs", "resources/shaders/blending.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
     float skyboxVertices[] = {
@@ -215,6 +221,30 @@ int main() {
             1.0f, -1.0f,  1.0f
     };
 
+    float transparentVertices[] = {
+            // positions         // texture Coords (swapped y coordinates because texture is flipped upside down)
+            0.0f,  0.5f,  0.0f,  0.0f,  0.0f,
+            0.0f, -0.5f,  0.0f,  0.0f,  1.0f,
+            1.0f, -0.5f,  0.0f,  1.0f,  1.0f,
+
+            0.0f,  0.5f,  0.0f,  0.0f,  0.0f,
+            1.0f, -0.5f,  0.0f,  1.0f,  1.0f,
+            1.0f,  0.5f,  0.0f,  1.0f,  0.0f
+    };
+
+    // transparent VAO
+    unsigned int transparentVAO, transparentVBO;
+    glGenVertexArrays(1, &transparentVAO);
+    glGenBuffers(1, &transparentVBO);
+    glBindVertexArray(transparentVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, transparentVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(transparentVertices), transparentVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    glBindVertexArray(0);
+
     // skybox VAO
     unsigned int skyboxVAO, skyboxVBO;
     glGenVertexArrays(1, &skyboxVAO);
@@ -235,6 +265,24 @@ int main() {
                     FileSystem::getPath("resources/textures/skybox/bk.jpg")
             };
     unsigned int cubemapTexture = loadCubemap(faces);
+
+    //TODO
+        unsigned int transparentTexture = loadTexture(FileSystem::getPath("resources/textures/transparent_cloud1.png").c_str());
+
+    // transparent clouds locations
+    // --------------------------------
+    vector<glm::vec3> clouds
+            {
+                    glm::vec3(2.0f, 1.0f, -5.0f),
+                    glm::vec3(3.0f, 1.0f, -3.0f),
+                    glm::vec3(-2.0f, 1.0f, -4.0f)
+//                    ,glm::vec3( 15.0f, 2.0f, 5.0f),
+//                    glm::vec3( 0.0f, 1.0f, 7.0f),
+//                    glm::vec3(-3.0f, 2.0f, -20.0f),
+//                    glm::vec3 (0.0f,-1.0f,-10.0f)
+            };
+    blendingShader.use();
+    blendingShader.setInt("texture1", 0);
 
     // shader configuration
     // --------------------
@@ -292,7 +340,6 @@ int main() {
         // render
         // ------
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
-//        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
@@ -311,8 +358,8 @@ int main() {
 
         ourShader.setVec3("dirLight.direction", glm::vec3(0.0f, 20.0f, 0.0f));
         ourShader.setVec3("dirLight.ambient", glm::vec3(0.05f));
-        ourShader.setVec3("dirLight.diffuse", glm::vec3(0.05f));
-        ourShader.setVec3("dirLight.specular", glm::vec3(0.05f));
+        ourShader.setVec3("dirLight.diffuse", glm::vec3(0.4f));
+        ourShader.setVec3("dirLight.specular", glm::vec3(0.5f));
 
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
@@ -365,23 +412,23 @@ int main() {
         ourShader.setMat4("model", model);
         bModel.Draw(ourShader);
 
-        // cloud 1
-        ourShader.use();
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(-20.0f, -6.5f, -40.0f));
-        model = glm::scale(model, glm::vec3(1.0f));
-        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
-        ourShader.setMat4("model", model);
-        cModel.Draw(ourShader);
-
-        // cloud 2
-        ourShader.use();
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(10.0f, 3.0f, -30.0f));
-        model = glm::scale(model, glm::vec3(0.7f));
-        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
-        ourShader.setMat4("model", model);
-        cModel.Draw(ourShader);
+//        // cloud 1
+//        ourShader.use();
+//        model = glm::mat4(1.0f);
+//        model = glm::translate(model, glm::vec3(-20.0f, -6.5f, -40.0f));
+//        model = glm::scale(model, glm::vec3(1.0f));
+//        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
+//        ourShader.setMat4("model", model);
+//        cModel.Draw(ourShader);
+//
+//        // cloud 2
+//        ourShader.use();
+//        model = glm::mat4(1.0f);
+//        model = glm::translate(model, glm::vec3(10.0f, 3.0f, -30.0f));
+//        model = glm::scale(model, glm::vec3(0.7f));
+//        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
+//        ourShader.setMat4("model", model);
+//        cModel.Draw(ourShader);
 
         //insect 1
         ourShader.use();
@@ -400,6 +447,24 @@ int main() {
         model = glm::translate(model,glm::vec3(sin(0.4f*currentFrame)*1400.0f, 0.0f, cos(currentFrame)*1200.0f));
         ourShader.setMat4("model", model);
         iModel.Draw(ourShader);
+
+
+        // TEXTURES
+        // transparent clouds
+        blendingShader.use();
+        blendingShader.setMat4("projection", projection);
+        blendingShader.setMat4("view", view);
+        glBindVertexArray(transparentVAO);
+        glBindTexture(GL_TEXTURE_2D, transparentTexture);
+        for (unsigned int i = 0; i < clouds.size(); i++)
+        {
+            model = glm::mat4(1.0f);
+            model = glm::scale(model, glm::vec3(5.0f));
+//            model = glm::translate(model,glm::vec3(0.0f, 0.0f, sin(0.1f*currentFrame)*1.0f));
+            model = glm::translate(model, clouds[i]);
+            blendingShader.setMat4("model", model);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
 
 
         // draw skybox
@@ -588,6 +653,45 @@ unsigned int loadCubemap(vector<std::string> faces)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return textureID;
+}
+
+// utility function for loading a 2D texture from file
+// ---------------------------------------------------
+unsigned int loadTexture(char const * path)
+{
+    unsigned int textureID;
+    glGenTextures(1, &textureID);
+
+    int width, height, nrComponents;
+    unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
+    if (data)
+    {
+        GLenum format;
+        if (nrComponents == 1)
+            format = GL_RED;
+        else if (nrComponents == 3)
+            format = GL_RGB;
+        else if (nrComponents == 4)
+            format = GL_RGBA;
+
+        glBindTexture(GL_TEXTURE_2D, textureID);
+        glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, format == GL_RGBA ? GL_CLAMP_TO_EDGE : GL_REPEAT); // for this tutorial: use GL_CLAMP_TO_EDGE to prevent semi-transparent borders. Due to interpolation it takes texels from next repeat
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, format == GL_RGBA ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR); //NEAREST?
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); //NEAREST?
+
+        stbi_image_free(data);
+    }
+    else
+    {
+        std::cout << "Texture failed to load at path: " << path << std::endl;
+        stbi_image_free(data);
+    }
 
     return textureID;
 }
