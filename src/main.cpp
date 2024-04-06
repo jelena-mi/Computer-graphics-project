@@ -35,7 +35,7 @@ const unsigned int SCR_WIDTH = 800;
 const unsigned int SCR_HEIGHT = 600;
 
 // camera
-Camera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+Camera camera(glm::vec3(0.0f, -2.5f, 0.0f));
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
 bool firstMouse = true;
@@ -60,16 +60,49 @@ struct ProgramState {
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
-    glm::vec3 modelPosition = glm::vec3(0.0f);
-    float modelScale = 1.0f;
+    glm::vec3 modelOffset = glm::vec3(0.0f, -5.0f, -20.0f);
+    glm::vec3 modelPosition = modelOffset;
+    glm::vec3 modelRelativePosition;
+    float modelScale = 0.5f;
     PointLight pointLight;
     ProgramState()
-            : camera(glm::vec3(0.0f, 0.0f, 3.0f)) {}
+            : camera(glm::vec3(0.0f, -2.5f, 0.0f)) {}
 
     void SaveToFile(std::string filename);
 
     void LoadFromFile(std::string filename);
 };
+
+struct Insect {
+    glm::vec3 position;
+    bool eaten;
+
+    Insect(glm::vec3 pos) : position(pos), eaten(false) {}
+};
+
+struct Bird {
+    glm::vec3 position;
+    bool eaten;
+
+    Bird(glm::vec3 pos) : position(pos), eaten(false) {}
+};
+
+float thresholdDistanceInsects = 5.0f;
+float thresholdDistanceFalcon = 3.0f;
+float proximityThreshold = 10.0f;
+int closestIdx = -1;
+glm::vec3 falconPosition = glm::vec3(0.0f, -2.0f, -25.0f);
+
+//insects locations
+vector<Insect> insects
+        {
+                glm::vec3( 0.0f, -2.5f, -30.0f),
+                glm::vec3(-15.0f, -3.0f, -40.0f),
+                glm::vec3(10.0f, -2.0f, -30.0f),
+                glm::vec3 (-10.0f, -1.5f, -40.0f),
+                glm::vec3(15.0f, -3.0f, -50.0f)
+        };
+int remainingInsects = insects.size();
 
 void ProgramState::SaveToFile(std::string filename) {
     std::ofstream out(filename);
@@ -172,7 +205,7 @@ int main() {
 
     // build and compile shaders
     // -------------------------
-    Shader ourShader("resources/shaders/model_lighting.vs", "resources/shaders/model_lighting.fs");
+    Shader modelShader("resources/shaders/model_lighting.vs", "resources/shaders/model_lighting.fs");
     Shader blendingShader("resources/shaders/blending.vs", "resources/shaders/blending.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
 
@@ -266,20 +299,26 @@ int main() {
             };
     unsigned int cubemapTexture = loadCubemap(faces);
 
-    //TODO
-        unsigned int transparentTexture = loadTexture(FileSystem::getPath("resources/textures/transparent_cloud1.png").c_str());
+    unsigned int transparentTexture = loadTexture(FileSystem::getPath("resources/textures/transparent_cloud1.png").c_str());
 
     // transparent clouds locations
     // --------------------------------
     vector<glm::vec3> clouds
             {
-                    glm::vec3(2.0f, 1.0f, -5.0f),
-                    glm::vec3(3.0f, 1.0f, -3.0f),
-                    glm::vec3(-2.0f, 1.0f, -4.0f)
-//                    ,glm::vec3( 15.0f, 2.0f, 5.0f),
-//                    glm::vec3( 0.0f, 1.0f, 7.0f),
-//                    glm::vec3(-3.0f, 2.0f, -20.0f),
-//                    glm::vec3 (0.0f,-1.0f,-10.0f)
+                    glm::vec3(-3.0f, -1.0f, -3.0f),
+                    glm::vec3(-2.95f, -2.0f, -6.0f),
+                    glm::vec3(-2.9f, 0.0f, -6.0f),
+                    glm::vec3(-2.5f, -1.0f, -9.0f),
+                    glm::vec3(-1.6f, -2.0f, -12.0f),
+                    glm::vec3(-1.5f, 0.0f, -12.0f),
+                    glm::vec3(0.0f, -1.0f, -15.0f),
+
+                    glm::vec3(1.5f, 0.0f, -12.0f),
+                    glm::vec3(1.6f, -2.0f, -12.0f),
+                    glm::vec3(2.5f, -1.0f, -9.0f),
+                    glm::vec3(2.9f, 0.0f, -6.0f),
+                    glm::vec3(2.95f, -2.0f, -6.0f),
+                    glm::vec3(3.0f, -1.0f, -3.0f)
             };
     blendingShader.use();
     blendingShader.setInt("texture1", 0);
@@ -290,21 +329,19 @@ int main() {
     skyboxShader.setInt("skybox", 0);
 
 
-    //TODO
+
     // load models
     // -----------
     Model ourModel("resources/objects/backpack/backpack.obj");
     Model abModel("resources/objects/air_balloon/11809_Hot_air_balloon_l2.obj");
     Model fModel("resources/objects/falcon/peregrine_falcon.obj");
     Model bModel("resources/objects/bird/bird.obj");
-    Model cModel("resources/objects/cloud/cloud.obj");
     Model iModel("resources/objects/insect/insect.obj");
 
     ourModel.SetShaderTextureNamePrefix("material.");
     abModel.SetShaderTextureNamePrefix("material.");
     fModel.SetShaderTextureNamePrefix("material.");
     bModel.SetShaderTextureNamePrefix("material.");
-    cModel.SetShaderTextureNamePrefix("material.");
     iModel.SetShaderTextureNamePrefix("material.");
 
 
@@ -344,109 +381,113 @@ int main() {
 
 
         // don't forget to enable shader before setting uniforms
-        ourShader.use();
+        modelShader.use();
         pointLight.position = glm::vec3(4.0 * cos(currentFrame), 4.0f, 4.0 * sin(currentFrame));
-        ourShader.setVec3("pointLight.position", pointLight.position);
-        ourShader.setVec3("pointLight.ambient", pointLight.ambient);
-        ourShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-        ourShader.setVec3("pointLight.specular", pointLight.specular);
-        ourShader.setFloat("pointLight.constant", pointLight.constant);
-        ourShader.setFloat("pointLight.linear", pointLight.linear);
-        ourShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-        ourShader.setVec3("viewPosition", programState->camera.Position);
-        ourShader.setFloat("material.shininess", 32.0f);
+        modelShader.setVec3("pointLight.position", pointLight.position);
+        modelShader.setVec3("pointLight.ambient", pointLight.ambient);
+        modelShader.setVec3("pointLight.diffuse", pointLight.diffuse);
+        modelShader.setVec3("pointLight.specular", pointLight.specular);
+        modelShader.setFloat("pointLight.constant", pointLight.constant);
+        modelShader.setFloat("pointLight.linear", pointLight.linear);
+        modelShader.setFloat("pointLight.quadratic", pointLight.quadratic);
+        modelShader.setVec3("viewPosition", programState->camera.Position);
+        modelShader.setFloat("material.shininess", 32.0f);
 
-        ourShader.setVec3("dirLight.direction", glm::vec3(0.0f, 20.0f, 0.0f));
-        ourShader.setVec3("dirLight.ambient", glm::vec3(0.05f));
-        ourShader.setVec3("dirLight.diffuse", glm::vec3(0.4f));
-        ourShader.setVec3("dirLight.specular", glm::vec3(0.5f));
+        modelShader.setVec3("dirLight.direction", glm::vec3(0.0f, 20.0f, 0.0f));
+        modelShader.setVec3("dirLight.ambient", glm::vec3(0.05f));
+        modelShader.setVec3("dirLight.diffuse", glm::vec3(0.4f));
+        modelShader.setVec3("dirLight.specular", glm::vec3(0.5f));
 
         // view/projection transformations
         glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
                                                 (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
         glm::mat4 view = programState->camera.GetViewMatrix();
 
-        ourShader.setMat4("projection", projection);
-        ourShader.setMat4("view", view);
+        modelShader.setMat4("projection", projection);
+        modelShader.setMat4("view", view);
 
 
         // render the loaded model
 
-        //backpack
-        ourShader.use();
-        glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model,
-                               programState->modelPosition); // translate it down so it's at the center of the scene
-        model = glm::scale(model, glm::vec3(programState->modelScale));    // it's a bit too big for our scene, so scale it down
-        ourShader.setMat4("model", model);
-//        ourModel.Draw(ourShader);
-
         // air balloon
-        ourShader.use();
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, -4.0f, -25.0f));
+        modelShader.use();
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(0.0f, -15.0f, -35.0f));
         model = glm::scale(model, glm::vec3(0.01f));
         model = glm::translate(model,glm::vec3(sin(0.1f*currentFrame)*3200.0f, 0.0f, cos(0.1f*currentFrame)*3200.0f));
         model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        ourShader.setMat4("model", model);
-        abModel.Draw(ourShader);
+        modelShader.setMat4("model", model);
+        abModel.Draw(modelShader);
+
 
         // falcon
-        ourShader.use();
+        modelShader.use();
         model = glm::mat4(0.8f);
-        model = glm::translate(model, glm::vec3(0.0f, 1.0f, -20.0f));
+        model = glm::translate(model, falconPosition);
         model = glm::scale(model, glm::vec3(0.2f));
-        model = glm::translate(model,glm::vec3(cos(0.1*currentFrame)*200.0f, 0.0f, sin(0.1*currentFrame)*200.0f));
+        model = glm::translate(model,glm::vec3(cos(0.15*currentFrame)*50.0f, 0.0f, sin(0.15*currentFrame)*50.0f));
         model = glm::rotate(model, glm::radians(0.1f*currentFrame), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        ourShader.setMat4("model", model);
-        fModel.Draw(ourShader);
+        modelShader.setMat4("model", model);
+        fModel.Draw(modelShader);
+        falconPosition = glm::vec3(model[3]);
+
 
         // bird
-        ourShader.use();
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, -7.5f, -15.0f));
-        model = glm::scale(model, glm::vec3(0.5f));
-        model = glm::translate(model,glm::vec3(0.0f, sin(2.5f*currentFrame)*0.5f, 0.0f));
-        model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        ourShader.setMat4("model", model);
-        bModel.Draw(ourShader);
+        Bird bird = Bird(programState->modelRelativePosition);
 
-//        // cloud 1
-//        ourShader.use();
-//        model = glm::mat4(1.0f);
-//        model = glm::translate(model, glm::vec3(-20.0f, -6.5f, -40.0f));
-//        model = glm::scale(model, glm::vec3(1.0f));
-//        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
-//        ourShader.setMat4("model", model);
-//        cModel.Draw(ourShader);
-//
-//        // cloud 2
-//        ourShader.use();
-//        model = glm::mat4(1.0f);
-//        model = glm::translate(model, glm::vec3(10.0f, 3.0f, -30.0f));
-//        model = glm::scale(model, glm::vec3(0.7f));
-//        model = glm::translate(model,glm::vec3(0.0f, sin(currentFrame)*0.3f, 0.0f));
-//        ourShader.setMat4("model", model);
-//        cModel.Draw(ourShader);
+        // check is the bird eaten by falcon
+        float distance = glm::distance(bird.position, falconPosition);
+        if (distance < thresholdDistanceFalcon) {
+            bird.eaten = true;
+        }
 
-        //insect 1
-        ourShader.use();
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, -5.0f, -50.0f));
-        model = glm::scale(model, glm::vec3(0.02f));
-        model = glm::translate(model,glm::vec3(sin(0.4f*currentFrame)*1100.0f, 0.0f, cos(currentFrame)*1000.0f));
-        ourShader.setMat4("model", model);
-        iModel.Draw(ourShader);
+        // render the bird
+        if(!bird.eaten) {
+            modelShader.use();
+            model = glm::translate(glm::mat4(1.0f),
+                                   programState->modelRelativePosition);   // update model position based on camera
+            model = glm::scale(model, glm::vec3(programState->modelScale));
+            model = glm::translate(model, glm::vec3(0.0f, sin(2.5f * currentFrame) * 0.5f, 0.0f));
+            model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            modelShader.setMat4("model", model);
+            bModel.Draw(modelShader);
+        }
 
-        // insect 2
-        ourShader.use();
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(0.0f, -3.0f, -30.0f));
-        model = glm::scale(model, glm::vec3(0.02f));
-        model = glm::translate(model,glm::vec3(sin(0.4f*currentFrame)*1400.0f, 0.0f, cos(currentFrame)*1200.0f));
-        ourShader.setMat4("model", model);
-        iModel.Draw(ourShader);
+
+        // insects
+
+        // check if insects are eaten by bird
+        for (unsigned int i = 0; i < insects.size(); i++) {
+
+            if (!insects[i].eaten) {
+                // calculate the distance between the bird and the insect
+                distance = glm::distance(bird.position, insects[i].position);
+
+                // check if the bird is close to the insect
+                if (distance < thresholdDistanceInsects) {
+                    insects[i].eaten = true;
+                    remainingInsects--;
+                    std::cout << remainingInsects << std::endl;
+                }
+            }
+        }
+
+        // render visible insects
+        modelShader.use();
+        for (unsigned int i = 0; i < insects.size(); i++) {
+            if (!(insects[i].eaten)) {
+                model = glm::mat4(1.0f);
+                model = glm::translate(model, insects[i].position);
+                model = glm::scale(model, glm::vec3(0.01f));
+                model = glm::translate(model,glm::vec3(sin(currentFrame/(i+3))*(i+9), 0.0f, cos(currentFrame/(i+2)*(i+6))));
+                modelShader.setMat4("model", model);
+                iModel.Draw(modelShader);
+
+                // update the position attribute of the insect
+                insects[i].position = glm::vec3(model[3]);   // extract the translation part from the final model matrix
+            }
+        }
 
 
         // TEXTURES
@@ -513,7 +554,7 @@ int main() {
 // ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS)
-        programState->camera.Position = glm::vec3(0.0f, 0.0f, 0.0f);
+        programState->camera.Position = glm::vec3(0.0f, -2.5f, 0.0f);
 
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
@@ -531,6 +572,9 @@ void processInput(GLFWwindow *window) {
         programState->camera.ProcessKeyboard(DOWN, deltaTime);
     if(glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
         programState->camera.ProcessKeyboard(UP, deltaTime);
+
+    // Update model position relative to camera
+    programState->modelRelativePosition = programState->camera.Position + programState->modelOffset;
 }
 
 // glfw: whenever the window size changed (by OS or user resize) this callback function executes
@@ -571,7 +615,6 @@ void DrawImGui(ProgramState *programState) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-
     {
         static float f = 0.0f;
         ImGui::Begin("Hello window");
@@ -594,6 +637,47 @@ void DrawImGui(ProgramState *programState) {
         ImGui::Text("(Yaw, Pitch): (%f, %f)", c.Yaw, c.Pitch);
         ImGui::Text("Camera front: (%f, %f, %f)", c.Front.x, c.Front.y, c.Front.z);
         ImGui::Checkbox("Camera mouse update", &programState->CameraMouseMovementUpdateEnabled);
+        ImGui::End();
+    }
+
+    {
+        ImGui::Begin("Game UI");
+
+        // Display proximity indicator
+        float closestDistance = std::numeric_limits<float>::max();
+
+        for (unsigned int i = 0; i < insects.size(); i++) {
+            float distance = glm::length(programState->modelRelativePosition - insects[i].position);
+            closestDistance = std::min(closestDistance, distance);
+            closestIdx = i;
+        }
+        if (closestDistance < proximityThreshold) {
+            ImGui::Text("Bird is close to an insect!");
+        } else {
+            ImGui::Text("Bird is not close to any insects.");
+        }
+        ImGui::Text("Number of remaining insects: %d", remainingInsects);
+
+        float distance = glm::length(programState->modelRelativePosition - falconPosition);
+        if (closestDistance < proximityThreshold) {
+            ImGui::Text("Be careful! Faclon is flying near you and he's hungry!");
+        } else {
+            ImGui::Text("There is not danger for the bird");
+        }
+
+        // Display message when all insects are eaten
+        if (remainingInsects <= 0) {
+            ImGui::Text("Congratulations! You have eaten all the insects!");
+        }
+
+        ImGui::End();
+    }
+
+    {
+        ImGui::Begin("Game positions");
+        ImGui::Text("Bird position: (%f, %f, %f)", (programState->modelRelativePosition)[0], (programState->modelRelativePosition)[1], (programState->modelRelativePosition)[2]);
+        ImGui::Text("Closest insect position: (%f, %f, %f)", insects[closestIdx].position[0], insects[closestIdx].position[1], insects[closestIdx].position[2]);
+
         ImGui::End();
     }
 
