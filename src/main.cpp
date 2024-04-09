@@ -60,6 +60,7 @@ struct ProgramState {
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
+    bool CameraKeyboardMovementUpdateEnabled = true;
     glm::vec3 modelPosition;
     glm::vec3 modelRelativePosition;
     glm::vec3 modelOffset = glm::vec3(0.0f, -6.0f, -20.0f);
@@ -143,6 +144,7 @@ void ProgramState::LoadFromFile(std::string filename) {
 ProgramState *programState;
 
 void DrawImGui(ProgramState *programState);
+void renderQuad();
 
 int main() {
     // glfw: initialize and configure
@@ -213,6 +215,8 @@ int main() {
     Shader modelShader("resources/shaders/model_lighting.vs", "resources/shaders/model_lighting.fs");
     Shader blendingShader("resources/shaders/blending.vs", "resources/shaders/blending.fs");
     Shader skyboxShader("resources/shaders/skybox.vs", "resources/shaders/skybox.fs");
+    Shader shaderGeometryPass("resources/shaders/g_buffer.vs", "resources/shaders/g_buffer.fs");
+    Shader shaderLightingPass("resources/shaders/deferred_shading.vs", "resources/shaders/deferred_shading.fs");
 
     float skyboxVertices[] = {
             // positions
@@ -350,8 +354,50 @@ int main() {
     iModel.SetShaderTextureNamePrefix("material.");
 
 
+    // configure g-buffer framebuffer
+    // ------------------------------
+    unsigned int gBuffer;
+    glGenFramebuffers(1, &gBuffer);
+    glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+    unsigned int gPosition, gNormal, gAlbedoSpec;
+    // position color buffer
+    glGenTextures(1, &gPosition);
+    glBindTexture(GL_TEXTURE_2D, gPosition);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gPosition, 0);
+    // normal color buffer
+    glGenTextures(1, &gNormal);
+    glBindTexture(GL_TEXTURE_2D, gNormal);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, gNormal, 0);
+    // color + specular color buffer
+    glGenTextures(1, &gAlbedoSpec);
+    glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, SCR_WIDTH, SCR_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT2, GL_TEXTURE_2D, gAlbedoSpec, 0);
+    // tell OpenGL which color attachments we'll use (of this framebuffer) for rendering
+    unsigned int attachments[3] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+    glDrawBuffers(3, attachments);
+    // create and attach depth buffer (renderbuffer)
+    unsigned int rboDepth;
+    glGenRenderbuffers(1, &rboDepth);
+    glBindRenderbuffer(GL_RENDERBUFFER, rboDepth);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, SCR_WIDTH, SCR_HEIGHT);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rboDepth);
+    // finally check if framebuffer is complete
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
     PointLight& pointLight = programState->pointLight;
-    pointLight.position = glm::vec3(2.0f, 2.0, -30.0);
+    pointLight.position = glm::vec3(4.0f, 2.0, -30.0);
     pointLight.ambient = glm::vec3(0.9, 0.9, 0.9);
     pointLight.diffuse = glm::vec3(0.8, 0.8, 0.8);
     pointLight.specular = glm::vec3(1.0, 1.0, 1.0);
@@ -366,6 +412,15 @@ int main() {
 
     // draw in wireframe
     //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+
+    // shader configuration
+    // --------------------
+    shaderLightingPass.use();
+    shaderLightingPass.setInt("gPosition", 0);
+    shaderLightingPass.setInt("gNormal", 1);
+    shaderLightingPass.setInt("gAlbedoSpec", 2);
+
 
     // render loop
     // -----------
@@ -386,67 +441,39 @@ int main() {
         glClearColor(programState->clearColor.r, programState->clearColor.g, programState->clearColor.b, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
-        // don't forget to enable shader before setting uniforms
-        modelShader.use();
-
-        //pointLight position
-        float radius = 5.0f;
-        float centerX = 4.0f;
-        float centerZ = -30.0f;
-        float angle = 1.0f * currentFrame; // speed of rotation
-        float x = centerX + radius * cos(angle);
-        float z = centerZ + radius * sin(angle);
-        pointLight.position = glm::vec3(x, 2.0f, z);
-
-        modelShader.setVec3("pointLight.position", pointLight.position);
-        modelShader.setVec3("pointLight.ambient", pointLight.ambient);
-        modelShader.setVec3("pointLight.diffuse", pointLight.diffuse);
-        modelShader.setVec3("pointLight.specular", pointLight.specular);
-        modelShader.setFloat("pointLight.constant", pointLight.constant);
-        modelShader.setFloat("pointLight.linear", pointLight.linear);
-        modelShader.setFloat("pointLight.quadratic", pointLight.quadratic);
-        modelShader.setVec3("viewPosition", programState->camera.Position);
-        modelShader.setFloat("material.shininess", 32.0f);
-
-        modelShader.setVec3("dirLight.direction", glm::vec3(-10.0f, 10.0f, 0.0f));
-        modelShader.setVec3("dirLight.ambient", glm::vec3(0.05f));
-        modelShader.setVec3("dirLight.diffuse", glm::vec3(0.4f));
-        modelShader.setVec3("dirLight.specular", glm::vec3(0.5f));
-
-        // view/projection transformations
-        glm::mat4 projection = glm::perspective(glm::radians(programState->camera.Zoom),
-                                                (float) SCR_WIDTH / (float) SCR_HEIGHT, 0.1f, 100.0f);
-        glm::mat4 view = programState->camera.GetViewMatrix();
-
-        modelShader.setMat4("projection", projection);
-        modelShader.setMat4("view", view);
-
+        // 1. geometry pass: render scene's geometry/color data into gbuffer
+        // -----------------------------------------------------------------
+        glBindFramebuffer(GL_FRAMEBUFFER, gBuffer);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        glm::mat4 projection = glm::perspective(glm::radians(camera.Zoom), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+        glm::mat4 view = camera.GetViewMatrix();
+        glm::mat4 model = glm::mat4(1.0f);
+        shaderGeometryPass.use();
+        shaderGeometryPass.setMat4("projection", projection);
+        shaderGeometryPass.setMat4("view", view);
 
 
         // render the loaded model
 
         // air balloon
-        modelShader.use();
-        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::mat4(1.0f);
         model = glm::translate(model, airBalloonPosition);
         model = glm::scale(model, glm::vec3(0.01f));
         model = glm::translate(model,glm::vec3(cos(0.1f*currentFrame)*3600.0f, 0.0f, sin(0.1f*currentFrame)*3600.0f+1000));
         model = glm::rotate(model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-        modelShader.setMat4("model", model);
-        abModel.Draw(modelShader);
+        shaderGeometryPass.setMat4("model", model);
+        abModel.Draw(shaderGeometryPass);
 
 
         // falcon
-        modelShader.use();
-        model = glm::mat4(0.8f);
+        model = glm::mat4(1.0f);
         model = glm::translate(model, falconPosition);
         model = glm::scale(model, glm::vec3(0.2f));
         model = glm::translate(model,glm::vec3(cos(0.15*currentFrame)*50.0f, -5.0f, sin(0.15*currentFrame)*50.0f));
         model = glm::rotate(model, glm::radians(0.15f*currentFrame), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        modelShader.setMat4("model", model);
-        fModel.Draw(modelShader);
+        shaderGeometryPass.setMat4("model", model);
+        fModel.Draw(shaderGeometryPass);
         falconPosition = glm::vec3(model[3]);
         falconDistance = glm::distance(programState->modelPosition, falconPosition);
 
@@ -459,14 +486,13 @@ int main() {
 
         // render the bird
         if(!bird.eaten) {
-            modelShader.use();
             model = glm::translate(glm::mat4(1.0f),
                                    programState->modelRelativePosition);   // update model position based on camera
             model = glm::scale(model, glm::vec3(programState->modelScale));
             model = glm::translate(model, glm::vec3(0.0f, sin(2.5f * currentFrame) * 0.5f, 0.0f));
             model = glm::rotate(model, glm::radians(180.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-            modelShader.setMat4("model", model);
-            bModel.Draw(modelShader);
+            shaderGeometryPass.setMat4("model", model);
+            bModel.Draw(shaderGeometryPass);
         }
 
 
@@ -488,15 +514,14 @@ int main() {
         }
 
         // render visible insects
-        modelShader.use();
         for (unsigned int i = 0; i < insects.size(); i++) {
             if (!(insects[i].eaten)) {
                 model = glm::mat4(1.0f);
                 model = glm::translate(model, insects[i].position);
                 model = glm::scale(model, glm::vec3(0.01f));
                 model = glm::translate(model,glm::vec3(sin(currentFrame/(i+3)) * (i+8), 0.0f, cos(currentFrame*(i+2))));
-                modelShader.setMat4("model", model);
-                iModel.Draw(modelShader);
+                shaderGeometryPass.setMat4("model", model);
+                iModel.Draw(shaderGeometryPass);
 
                 // update the position attribute of the insect
                 insects[i].position = glm::vec3(model[3]);   // extract the translation part from the final model matrix
@@ -514,6 +539,8 @@ int main() {
                 }
             }
         }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 
         // TEXTURES
@@ -548,6 +575,66 @@ int main() {
         glDepthFunc(GL_LESS); // set depth function back to default
 
 
+        // lighting info
+        // -------------
+
+        //pointLight position
+        float radius = 5.0f;
+        float centerX = 4.0f;
+        float centerZ = -30.0f;
+        float angle = 1.0f * currentFrame; // speed of rotation
+        float x = centerX + radius * cos(angle);
+        float z = centerZ + radius * sin(angle);
+        pointLight.position = glm::vec3(x, 2.0f, z);
+
+
+        // 2. lighting pass: calculate lighting by iterating over a screen filled quad pixel-by-pixel using the gbuffer's content.
+        // -----------------------------------------------------------------------------------------------------------------------
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        shaderLightingPass.use();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, gPosition);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, gNormal);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, gAlbedoSpec);
+
+        // send light relevant uniforms
+
+        shaderLightingPass.setVec3("pointLight.position", pointLight.position);
+        shaderLightingPass.setVec3("pointLight.ambient", pointLight.ambient);
+        shaderLightingPass.setVec3("pointLight.diffuse", pointLight.diffuse);
+        shaderLightingPass.setVec3("pointLight.specular", pointLight.specular);
+        shaderLightingPass.setFloat("pointLight.constant", pointLight.constant);
+        shaderLightingPass.setFloat("pointLight.linear", pointLight.linear);
+        shaderLightingPass.setFloat("pointLight.quadratic", pointLight.quadratic);
+        shaderLightingPass.setVec3("viewPosition", programState->camera.Position);
+        shaderLightingPass.setFloat("material.shininess", 32.0f);
+
+        shaderLightingPass.setVec3("dirLight.direction", glm::vec3(-10.0f, 10.0f, 0.0f));
+        shaderLightingPass.setVec3("dirLight.ambient", glm::vec3(0.05f));
+        shaderLightingPass.setVec3("dirLight.diffuse", glm::vec3(0.4f));
+        shaderLightingPass.setVec3("dirLight.specular", glm::vec3(0.5f));
+
+        // finally render quad
+//        renderQuad();
+
+
+        // 2.5. copy content of geometry's depth buffer to default framebuffer's depth buffer
+        // ----------------------------------------------------------------------------------
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, gBuffer);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0); // write to default framebuffer
+        // blit to default framebuffer. Note that this may or may not work as the internal formats of both the FBO and default framebuffer have to match.
+        // the internal formats are implementation defined. This works on all of my systems, but if it doesn't on yours you'll likely have to write to the
+        // depth buffer in another shader stage (or somehow see to match the default framebuffer's internal format with the FBO's internal format).
+        glBlitFramebuffer(0, 0, SCR_WIDTH, SCR_HEIGHT, 0, 0, SCR_WIDTH, SCR_HEIGHT, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+
+        // 3. render lights on top of scene
+        // --------------------------------
+
+
         if (programState->ImGuiEnabled)
             DrawImGui(programState);
 
@@ -575,6 +662,37 @@ int main() {
     return 0;
 }
 
+// renderQuad() renders a 1x1 XY quad in NDC
+// -----------------------------------------
+unsigned int quadVAO = 0;
+unsigned int quadVBO;
+void renderQuad()
+{
+    if (quadVAO == 0)
+    {
+        float quadVertices[] = {
+                // positions        // texture Coords
+                -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
+                -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
+                1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
+                1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
+        };
+        // setup plane VAO
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindVertexArray(0);
+}
+
 // process all input: query GLFW whether relevant keys are pressed/released this frame and react accordingly
 // ---------------------------------------------------------------------------------------------------------
 void processInput(GLFWwindow *window) {
@@ -583,6 +701,7 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         programState->camera.Position = glm::vec3(0.0f, -3.5f, 0.0f);
         programState->CameraMouseMovementUpdateEnabled = true;
+        programState->CameraMouseMovementUpdateEnabled = true;
         bird.eaten = false;
         for (unsigned int i = 0; i < insects.size(); i++) {
             insects[i].eaten = false;
@@ -590,22 +709,24 @@ void processInput(GLFWwindow *window) {
         remainingInsects = insects.size();
     }
 
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+    if(programState->CameraMouseMovementUpdateEnabled) {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    if(glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(DOWN, deltaTime);
-    if(glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(UP, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(DOWN, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(UP, deltaTime);
+    }
 
     // Update model position relative to camera
     programState->modelRelativePosition = programState->camera.Position + programState->modelOffset;
@@ -705,6 +826,7 @@ void DrawImGui(ProgramState *programState) {
         if (bird.eaten) {
             ImGui::Text("Game over! Your bird was eaten by the falcon!");
             programState->CameraMouseMovementUpdateEnabled = false;
+            programState->CameraKeyboardMovementUpdateEnabled = false;
         }
 
         ImGui::End();
@@ -735,6 +857,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
     if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS){
         programState->CameraMouseMovementUpdateEnabled = !programState->CameraMouseMovementUpdateEnabled;
+        programState->CameraKeyboardMovementUpdateEnabled = !programState->CameraKeyboardMovementUpdateEnabled;
         std::cout << "Camera lock - " << (programState->CameraMouseMovementUpdateEnabled ? "Disabled" : "Enabled") << '\n';
     }
 }
