@@ -60,6 +60,7 @@ struct ProgramState {
     bool ImGuiEnabled = false;
     Camera camera;
     bool CameraMouseMovementUpdateEnabled = true;
+    bool CameraKeyboardMovementUpdateEnabled = true;
     glm::vec3 modelPosition;
     glm::vec3 modelRelativePosition;
     glm::vec3 modelOffset = glm::vec3(0.0f, -6.0f, -20.0f);
@@ -399,6 +400,7 @@ int main() {
         float z = centerZ + radius * sin(angle);
         pointLight.position = glm::vec3(x, 2.0f, z);
 
+        // point light setup
         modelShader.setVec3("pointLight.position", pointLight.position);
         modelShader.setVec3("pointLight.ambient", pointLight.ambient);
         modelShader.setVec3("pointLight.diffuse", pointLight.diffuse);
@@ -409,6 +411,7 @@ int main() {
         modelShader.setVec3("viewPosition", programState->camera.Position);
         modelShader.setFloat("material.shininess", 32.0f);
 
+        // directional light setup
         modelShader.setVec3("dirLight.direction", glm::vec3(-10.0f, 10.0f, 0.0f));
         modelShader.setVec3("dirLight.ambient", glm::vec3(0.05f));
         modelShader.setVec3("dirLight.diffuse", glm::vec3(0.4f));
@@ -583,6 +586,7 @@ void processInput(GLFWwindow *window) {
     if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         programState->camera.Position = glm::vec3(0.0f, -3.5f, 0.0f);
         programState->CameraMouseMovementUpdateEnabled = true;
+        programState->CameraKeyboardMovementUpdateEnabled = true;
         bird.eaten = false;
         for (unsigned int i = 0; i < insects.size(); i++) {
             insects[i].eaten = false;
@@ -590,22 +594,24 @@ void processInput(GLFWwindow *window) {
         remainingInsects = insects.size();
     }
 
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        glfwSetWindowShouldClose(window, true);
+    if(programState->CameraMouseMovementUpdateEnabled) {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+            glfwSetWindowShouldClose(window, true);
 
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(FORWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(LEFT, deltaTime);
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(RIGHT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(FORWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(BACKWARD, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(LEFT, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(RIGHT, deltaTime);
 
-    if(glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(DOWN, deltaTime);
-    if(glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-        programState->camera.ProcessKeyboard(UP, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(DOWN, deltaTime);
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+            programState->camera.ProcessKeyboard(UP, deltaTime);
+    }
 
     // Update model position relative to camera
     programState->modelRelativePosition = programState->camera.Position + programState->modelOffset;
@@ -705,6 +711,7 @@ void DrawImGui(ProgramState *programState) {
         if (bird.eaten) {
             ImGui::Text("Game over! Your bird was eaten by the falcon!");
             programState->CameraMouseMovementUpdateEnabled = false;
+            programState->CameraKeyboardMovementUpdateEnabled = false;
         }
 
         ImGui::End();
@@ -735,6 +742,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 
     if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS){
         programState->CameraMouseMovementUpdateEnabled = !programState->CameraMouseMovementUpdateEnabled;
+        programState->CameraKeyboardMovementUpdateEnabled = !programState->CameraKeyboardMovementUpdateEnabled;
         std::cout << "Camera lock - " << (programState->CameraMouseMovementUpdateEnabled ? "Disabled" : "Enabled") << '\n';
     }
 }
